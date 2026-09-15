@@ -1,14 +1,38 @@
 import { validateMessage, replyTo } from "./brain.js";
 import { renderMessages } from "./view.js";
+import { persona } from "./persona.js";
 
 const formulaire = document.querySelector("#chat-form");
 const statut = document.querySelector("#status");
 const versionElt = document.querySelector("#version");
 const champ = document.querySelector("#message");
 const liste = document.querySelector("#messages");
+const accueilElt = document.querySelector("#accueil");
+const suggestionsElt = document.querySelector("#suggestions");
 
 const historique = [];
 const CLE = "capweb.historique";
+
+function mettreAJourAccueil() {
+  if (!accueilElt) return;
+  accueilElt.textContent = persona.accueil;
+  accueilElt.hidden = historique.length > 0;
+}
+
+function construireSuggestions() {
+  if (!suggestionsElt) return;
+  const boutons = persona.suggestions.map((question) => {
+    const bouton = document.createElement("button");
+    bouton.type = "button";
+    bouton.textContent = question;
+    bouton.addEventListener("click", () => {
+      champ.value = question;
+      champ.focus();
+    });
+    return bouton;
+  });
+  suggestionsElt.replaceChildren(...boutons);
+}
 
 function enregistrer() {
   localStorage.setItem(CLE, JSON.stringify(historique));
@@ -23,7 +47,9 @@ try {
   localStorage.removeItem(CLE);
   statut.textContent = "Conversation précédente illisible, elle a été effacée.";
 }
+construireSuggestions();
 renderMessages(historique, liste);
+mettreAJourAccueil();
 
 formulaire?.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -38,6 +64,7 @@ formulaire?.addEventListener("submit", (event) => {
   historique.push({ role: "user", text: resultat.value });
   historique.push({ role: "assistant", text: replyTo(resultat.value) });
   renderMessages(historique, liste);
+  mettreAJourAccueil();
   enregistrer();
 
   champ.value = "";
@@ -50,6 +77,7 @@ document.querySelector("#effacer")?.addEventListener("click", () => {
   historique.length = 0;
   localStorage.removeItem(CLE);
   renderMessages(historique, liste);
+  mettreAJourAccueil();
 });
 
 // Version du serveur local, échec discret si indisponible.
