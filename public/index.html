@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cap Web — départ</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Cap Web</h1>
+    </header>
+    <main>
+      <p>
+        Le serveur fonctionne. Aujourd’hui, nous construisons notre interface.
+      </p>
+      <p id="status" role="status"></p>
+      <section aria-labelledby="titre-chat">
+        <h2 id="titre-chat">Discussion</h2>
+        <ul id="messages" aria-label="Messages" aria-live="polite"></ul>
+        <form id="chat-form">
+          <label for="message">Votre message</label>
+          <textarea
+            id="message"
+            name="message"
+            rows="3"
+            required
+            maxlength="280"
+          ></textarea>
+          <button type="submit">Envoyer</button>
+        </form>
+        <button type="button" id="effacer">Effacer la conversation</button>
+      </section>
+    </main>
+    <footer><span id="version">En construction...</span></footer>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
