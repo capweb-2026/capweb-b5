@@ -9,7 +9,8 @@ const FICHIERS = {
   '/styles.css': 'styles.css',
   '/js/app.js': 'js/app.js',
   '/js/brain.js': 'js/brain.js',
-  '/js/view.js': 'js/view.js'
+  '/js/view.js': 'js/view.js',
+  '/js/persona.js': 'js/persona.js'
 };
 
 // MIME corrects pour chaque fichier servi.
@@ -18,7 +19,8 @@ const TYPES = {
   'styles.css': 'text/css; charset=utf-8',
   'js/app.js': 'text/javascript; charset=utf-8',
   'js/brain.js': 'text/javascript; charset=utf-8',
-  'js/view.js': 'text/javascript; charset=utf-8'
+  'js/view.js': 'text/javascript; charset=utf-8',
+  'js/persona.js': 'text/javascript; charset=utf-8'
 };
 
 export function createApp({ publicDir, version = 'dev' } = {}) {
