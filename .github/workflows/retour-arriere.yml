@@ -1,0 +1,105 @@
+# Retour arrière : remettre en prod une version déjà validée, repérée par son tag prod-<numéro>.
+name: retour-arriere
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de prod à remettre en ligne, par exemple prod-12"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chaine-refs/heads/main
+  cancel-in-progress: false
+
+jobs:
+  controler:
+    name: controler
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Le tag doit être un tag de prod
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^prod-[0-9]+$'; then
+            echo "Tag refusé : $TAG (attendu prod-<numéro>)"
+            exit 1
+          fi
+
+  production:
+    name: production
+    needs: controler
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.URL_PRODUCTION || steps.deployer.outputs.url }}
+    outputs:
+      url: ${{ steps.deployer.outputs.url }}
+      sha: ${{ steps.commit.outputs.sha }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Vercel doit être configuré
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "Vercel n'est pas configuré pour ce dépôt : impossible de remettre une version en prod."
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - id: commit
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Ne pas transmettre les métadonnées Git à Vercel
+        run: rm -rf .git
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: npm install --global vercel@59.16.0
+      - run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - run: vercel build --prod --token="$VERCEL_TOKEN"
+        env:
+          DEPLOY_SHA: ${{ steps.commit.outputs.sha }}
+      - id: deployer
+        name: Remettre le tag en production
+        env:
+          DEPLOY_SHA: ${{ steps.commit.outputs.sha }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          url="$(vercel deploy --prebuilt --prod --meta commit="$DEPLOY_SHA" --meta tag="$TAG" --token="$VERCEL_TOKEN")"
+          case "$url" in
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Adresse de déploiement inattendue : $url"; exit 1 ;;
+          esac
+
+  smoke-production:
+    name: smoke-production
+    needs: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
+        env:
+          BASE_URL: ${{ vars.URL_PRODUCTION || needs.production.outputs.url }}
+          EXPECTED_SHA: ${{ needs.production.outputs.sha }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

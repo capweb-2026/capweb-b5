@@ -1,0 +1,212 @@
+# La chaîne : rien n'atteint la prod sans avoir été vérifié, prévisualisé, testé et approuvé.
+name: chaine
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+  # Premier déploiement du projet (toujours une prod chez Vercel) et remise en prod de main à la demande.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chaine-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verifier:
+    name: verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run check:deps
+      - name: Tests et harnais modifiés avec justification
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: npm run check:tests
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+
+  preview:
+    name: preview
+    needs: verifier
+    if: github.event_name == 'pull_request' && github.event.action != 'edited' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+      url: ${{ steps.deployer.outputs.url }}
+    outputs:
+      url: ${{ steps.deployer.outputs.url }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DEPLOY_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - id: config
+        name: Vercel est-il configuré ?
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Pas de preview::Vercel n'est pas encore configuré pour ce dépôt (normal avant le CP2)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.config.outputs.ok == 'true'
+        with:
+          persist-credentials: false
+      # Sur Hobby, Vercel refuse les commits dont l'auteur n'est pas le propriétaire du compte Vercel.
+      # Sans .git, la CLI n'envoie aucune métadonnée Git : rien n'est réécrit, et le commit déployé
+      # reste tracé par /version.json (DEPLOY_SHA), --meta commit et le tag prod-<numéro>.
+      - name: Ne pas transmettre les métadonnées Git à Vercel
+        if: steps.config.outputs.ok == 'true'
+        run: rm -rf .git
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.config.outputs.ok == 'true'
+        with:
+          node-version: 24
+      - if: steps.config.outputs.ok == 'true'
+        run: npm install --global vercel@59.16.0
+      - if: steps.config.outputs.ok == 'true'
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+      - if: steps.config.outputs.ok == 'true'
+        run: vercel build --token="$VERCEL_TOKEN"
+      - id: deployer
+        name: Déployer la preview
+        if: steps.config.outputs.ok == 'true'
+        run: |
+          url="$(vercel deploy --prebuilt --meta commit="$DEPLOY_SHA" --token="$VERCEL_TOKEN")"
+          case "$url" in
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Adresse de déploiement inattendue : $url"; exit 1 ;;
+          esac
+
+  smoke-preview:
+    name: smoke-preview
+    needs: preview
+    if: needs.preview.outputs.url != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
+        env:
+          BASE_URL: ${{ needs.preview.outputs.url }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+  production:
+    name: production
+    needs: verifier
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.URL_PRODUCTION || steps.deployer.outputs.url }}
+    outputs:
+      url: ${{ steps.deployer.outputs.url }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DEPLOY_SHA: ${{ github.sha }}
+    steps:
+      - id: config
+        name: Vercel est-il configuré ?
+        run: |
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Pas de mise en prod::Vercel n'est pas encore configuré pour ce dépôt (normal avant le CP2)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.config.outputs.ok == 'true'
+        with:
+          persist-credentials: false
+      - name: Ne pas transmettre les métadonnées Git à Vercel
+        if: steps.config.outputs.ok == 'true'
+        run: rm -rf .git
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.config.outputs.ok == 'true'
+        with:
+          node-version: 24
+      - if: steps.config.outputs.ok == 'true'
+        run: npm install --global vercel@59.16.0
+      - if: steps.config.outputs.ok == 'true'
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - if: steps.config.outputs.ok == 'true'
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+      - id: deployer
+        name: Déployer en production
+        if: steps.config.outputs.ok == 'true'
+        run: |
+          url="$(vercel deploy --prebuilt --prod --meta commit="$DEPLOY_SHA" --token="$VERCEL_TOKEN")"
+          case "$url" in
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Adresse de déploiement inattendue : $url"; exit 1 ;;
+          esac
+
+  smoke-production:
+    name: smoke-production
+    needs: production
+    if: needs.production.outputs.url != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
+        env:
+          # Domaine public de prod s'il est déclaré (ce que voient les visiteurs) ;
+          # sinon adresse unique du déploiement, protégée, ouverte par le secret de contournement.
+          BASE_URL: ${{ vars.URL_PRODUCTION || needs.production.outputs.url }}
+          EXPECTED_SHA: ${{ github.sha }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+
+  tag-production:
+    name: tag-production
+    needs: smoke-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Marquer la version en prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/prod-$GITHUB_RUN_NUMBER" -f sha="$GITHUB_SHA"
