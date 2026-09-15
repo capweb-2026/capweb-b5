@@ -27,6 +27,11 @@ const lireServeur = async () => sansCommentaires(await readFile(new URL('../serv
 // Base valide pour tester chaque refus de validatePersona un par un.
 const baseValide = () => ({ nom: NOM, emoji: EMOJI, accueil: ACCUEIL, suggestions: [...SUGGESTIONS] });
 
+// Un persona dont l'accueil contient toujours le nom : la longueur du nom devient
+// la seule règle qui puisse échouer. Sans cela, un nom hors bornes viole aussi
+// « l'accueil contient le nom », et le test resterait vert même sans limite.
+const avecNom = (nom) => ({ ...baseValide(), nom, accueil: `Bonjour, je suis ${nom}.` });
+
 const echec = (resultat) => {
   assert.equal(resultat.ok, false);
   assert.ok(Array.isArray(resultat.erreurs));
@@ -71,13 +76,19 @@ describe('Identité — validatePersona refuse un nom invalide', () => {
 
   it('T-N6 : refuse un nom de moins de 2 caractères après trim', () => {
     for (const nom of ['', ' ', 'a', ' a ']) {
-      echec(validatePersona({ ...baseValide(), nom }));
+      echec(validatePersona(avecNom(nom)));
     }
   });
 
   it('T-N7 : refuse un nom de plus de 20 caractères après trim', () => {
-    echec(validatePersona({ ...baseValide(), nom: 'a'.repeat(21) }));
-    echec(validatePersona({ ...baseValide(), nom: `  ${'a'.repeat(21)}  ` }));
+    echec(validatePersona(avecNom('a'.repeat(21))));
+    echec(validatePersona(avecNom(`  ${'a'.repeat(21)}  `)));
+  });
+
+  it('T-N7b : accepte les bornes exactes, 2 et 20 caractères après trim', () => {
+    assert.deepEqual(validatePersona(avecNom('ab')), { ok: true });
+    assert.deepEqual(validatePersona(avecNom('a'.repeat(20))), { ok: true });
+    assert.deepEqual(validatePersona(avecNom(`  ${'a'.repeat(20)}  `)), { ok: true });
   });
 
   it('T-N8 : accepte Etud\'IA', () => {
