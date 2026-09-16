@@ -17,6 +17,9 @@
     "check:tests": "node scripts/check-tests.js",
     "verify": "npm run lint && npm test && npm run check:deps && npm run test:browser"
   },
+  "dependencies": {
+    "dayjs": "1.11.23"
+  },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.63.0",
