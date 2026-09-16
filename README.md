@@ -2,6 +2,8 @@
 
 Ce dépôt contient votre assistant et tout ce qui l'empêche de casser : tests de contrat, contrôles, chaîne CI/CD et carte des défenses. Des agents peuvent écrire le code ; c'est vous qui décidez de ce qui entre dans `main` et de ce qui part en prod.
 
+**Prod : https://capweb-b5.vercel.app**
+
 ## Lancer en local
 
 Avec Node 24.20 ou plus récent :
