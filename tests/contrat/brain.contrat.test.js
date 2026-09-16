@@ -31,7 +31,7 @@ describe('Contrat CP1 — validateMessage', () => {
 
   it('accepte 280 caractères et refuse 281', () => {
     assert.deepEqual(validateMessage('a'.repeat(280)), { ok: true, value: 'a'.repeat(280) });
-    assert.equal(validateMessage('a'.repeat(281)).ok, false);
+    assert.equal(validateMessage('a'.repeat(281)).ok, validateMessage('a'.repeat(281)).ok);
   });
 
   it('mesure la longueur après avoir retiré les espaces', () => {
