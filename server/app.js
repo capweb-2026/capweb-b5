@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { repondre, fournisseurDepuisEnvironnement } from './ia.js';
 
 // Liste explicite : seuls ces chemins publics sont servis.
 const FICHIERS = {
@@ -36,6 +37,11 @@ export function createApp({ publicDir, version = 'dev' } = {}) {
 
   async function traiter(req, res) {
     const methode = (req.method ?? 'GET').toUpperCase();
+    // Seule route dynamique : POST /api/chat, sans clé côté navigateur.
+    if (methode === 'POST' && (req.url ?? '').split('?')[0] === '/api/chat') {
+      await chat(req, res);
+      return;
+    }
     // Seules GET et HEAD sont autorisées (outillage statique J1).
     if (methode !== 'GET' && methode !== 'HEAD') {
       res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' });
@@ -76,6 +82,38 @@ export function createApp({ publicDir, version = 'dev' } = {}) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('Non trouvé');
     }
+  }
+
+  async function chat(req, res) {
+    const envoyer = (statut, objet) => {
+      const corps = JSON.stringify(objet);
+      res.writeHead(statut, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(corps) });
+      res.end(corps);
+    };
+    let donnees;
+    try {
+      const morceaux = [];
+      let taille = 0;
+      for await (const morceau of req) {
+        taille += morceau.length;
+        // Corps borné : un message fait au plus 280 caractères, l'historique 6 messages utiles.
+        if (taille > 100_000) throw new Error('corps trop grand');
+        morceaux.push(morceau);
+      }
+      donnees = JSON.parse(Buffer.concat(morceaux).toString('utf8'));
+    } catch {
+      envoyer(400, { error: 'Requête invalide' });
+      return;
+    }
+    const resultat = await repondre(donnees?.message, {
+      fournisseur: fournisseurDepuisEnvironnement(),
+      historique: donnees?.historique,
+    });
+    if (!resultat.ok) {
+      envoyer(400, { error: resultat.error });
+      return;
+    }
+    envoyer(200, { texte: resultat.texte, source: resultat.source, degrade: resultat.degrade });
   }
 
   return serveur;

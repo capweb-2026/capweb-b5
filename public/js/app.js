@@ -51,8 +51,30 @@ construireSuggestions();
 renderMessages(historique, liste);
 mettreAJourAccueil();
 
-formulaire?.addEventListener("submit", (event) => {
+const MODE_DEGRADE = "Mode dégradé : l'IA ne répond pas, Etud'IA utilise ses règles.";
+
+// Demande la réponse au serveur ; en cas d'échec, repli local sur les règles.
+async function obtenirReponse(message, precedents) {
+  try {
+    const reponse = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, historique: precedents }),
+    });
+    if (!reponse.ok) throw new Error(`statut ${reponse.status}`);
+    const donnees = await reponse.json();
+    if (typeof donnees.texte !== "string") throw new Error("réponse inattendue");
+    return { texte: donnees.texte, degrade: donnees.degrade === true };
+  } catch {
+    return { texte: replyTo(message), degrade: true };
+  }
+}
+
+let enCours = false;
+
+formulaire?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (enCours) return;
 
   const resultat = validateMessage(champ.value);
   if (!resultat.ok) {
@@ -61,14 +83,20 @@ formulaire?.addEventListener("submit", (event) => {
     return;
   }
 
+  enCours = true;
+  const precedents = historique.slice(-6);
+  const { texte, degrade } = await obtenirReponse(resultat.value, precedents);
+  enCours = false;
+
+  // Toujours exactement deux lignes par échange ; le mode dégradé ne va que dans #status.
   historique.push({ role: "user", text: resultat.value });
-  historique.push({ role: "assistant", text: replyTo(resultat.value) });
+  historique.push({ role: "assistant", text: texte });
   renderMessages(historique, liste);
   mettreAJourAccueil();
   enregistrer();
 
   champ.value = "";
-  statut.textContent = "";
+  statut.textContent = degrade ? MODE_DEGRADE : "";
   champ.focus();
 });
 
