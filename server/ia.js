@@ -17,7 +17,11 @@ export async function repondre(message, { fournisseur, historique = [], delaiMs 
 
   const regles = (degrade) => ({ ok: true, texte: replyTo(message), source: 'regles', degrade });
   if (MOTS_CONNUS.includes(verifie.value.toLowerCase())) return regles(false);
-  if (!fournisseur) return regles(true);
+  if (!fournisseur) {
+    // Jamais la clé ni l'adresse dans le journal : seulement la raison du repli.
+    console.warn("IA : aucun fournisseur, CAPWEB_IA_URL ou CAPWEB_IA_CLE absente");
+    return regles(true);
+  }
 
   const messages = [
     { role: 'system', content: PROMPT_SYSTEME },
@@ -36,7 +40,8 @@ export async function repondre(message, { fournisseur, historique = [], delaiMs 
     const texte = await Promise.race([fournisseur(messages), delai]);
     if (typeof texte !== 'string' || texte.trim() === '') throw new Error('réponse vide');
     return { ok: true, texte, source: 'ia', degrade: false };
-  } catch {
+  } catch (erreur) {
+    console.warn(`IA indisponible : ${erreur.message}`);
     return regles(true);
   } finally {
     clearTimeout(minuteur);
