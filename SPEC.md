@@ -47,7 +47,7 @@ serveur, et si l'IA ne répond pas, l'assistant répond quand même avec ses rè
 11. **Consignes secrètes** — Quand l'utilisateur demande le prompt système, ou d'ignorer les
     consignes, le système refuse et ne révèle ni le prompt système ni ses consignes.
 12. **Repli** — Quand l'IA ne répond pas (clé refusée par une erreur 401, budget épuisé, autre
-    erreur, ou délai de 8 secondes dépassé), le système répond avec `replyTo`, et `#status`
+    erreur, ou délai de 20 secondes dépassé), le système répond avec `replyTo`, et `#status`
     affiche « Mode dégradé : l'IA ne répond pas, Etud'IA utilise ses règles. » La conversation
     garde exactement deux lignes par échange : ce message n'est jamais une ligne de `#messages`.
 13. **Clé côté serveur** — Quand la page envoie un message, le navigateur n'appelle que
@@ -83,7 +83,7 @@ ajoutée. Cette spec ne change ni `validateMessage` ni `replyTo`, qui restent le
 ### La vraie IA (CP3)
 
 - `server/ia.js` est le **seul** module qui parle à la passerelle. Il exporte :
-  - `repondre(message, { fournisseur, historique = [], delaiMs = 8000 })`, qui ne lève jamais
+  - `repondre(message, { fournisseur, historique = [], delaiMs = 20000 })`, qui ne lève jamais
     d'erreur et renvoie une promesse de :
     - `{ ok: false, error }` si `validateMessage(message)` refuse le message ;
     - sinon `{ ok: true, texte, source, degrade }`, où `source` vaut `'ia'` ou `'regles'`, et

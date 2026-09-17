@@ -11,7 +11,7 @@ Réponds toujours en français, en tutoyant, en 250 mots au plus.`;
 
 const MOTS_CONNUS = ['salut', 'bonjour', 'aide', 'test'];
 
-export async function repondre(message, { fournisseur, historique = [], delaiMs = 8000 } = {}) {
+export async function repondre(message, { fournisseur, historique = [], delaiMs = 20000 } = {}) {
   const verifie = validateMessage(message);
   if (!verifie.ok) return { ok: false, error: verifie.error };
 
